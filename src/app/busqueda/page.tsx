@@ -39,7 +39,7 @@ export default function BusquedaPage() {
 
   // --- Intención state ---
   const [iForm, setIForm] = useState({ keywords: '', location: '', limit: '20' });
-  const [iPlats, setIPlats] = useState<string[]>(['reddit', 'twitter', 'facebook', 'quora', 'foros', 'web']);
+  const [iPlats, setIPlats] = useState<string[]>(['reddit', 'twitter', 'quora', 'foros', 'web']);
   const [iLeads, setILeads] = useState<Lead[]>([]);
   const [iLoading, setILoading] = useState(false);
   const [iProgress, setIProgress] = useState(0);

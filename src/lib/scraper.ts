@@ -4,6 +4,20 @@ interface BraveResult {
   description?: string;
 }
 
+const USELESS_DESC = [
+  'we cannot provide a description',
+  'sign in to',
+  'log in to',
+  'please enable javascript',
+  'access denied',
+];
+
+function isUseful(r: BraveResult): boolean {
+  if (!r.description) return false;
+  const d = r.description.toLowerCase();
+  return !USELESS_DESC.some(s => d.includes(s));
+}
+
 const SKIP_DOMAINS = [
   'tripadvisor', 'yelp', 'google', 'facebook', 'instagram', 'twitter',
   'wikipedia', 'youtube', 'gob.mx', 'gobierno', 'linkedin', 'pinterest',
@@ -53,8 +67,9 @@ export async function* scrapeLeads(
   const query = `${keywords} ${location} empresa contacto telefono`.trim();
   const results = await braveSearch(query, Math.min(limit * 2, 20));
 
+  const useful = results.filter(isUseful);
   let found = 0;
-  for (const r of results) {
+  for (const r of useful) {
     if (found >= limit) break;
 
     const urlLower = r.url.toLowerCase();

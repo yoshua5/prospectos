@@ -28,6 +28,20 @@ const SOCIAL_DOMAINS = [
   'quora.com', 'wikipedia.org', 'amazon.com', 'ebay.com',
 ];
 
+const USELESS_DESC = [
+  'we cannot provide a description',
+  'sign in to',
+  'log in to',
+  'please enable javascript',
+  'access denied',
+];
+
+function isUseful(r: BraveResult): boolean {
+  if (!r.description) return false;
+  const d = r.description.toLowerCase();
+  return !USELESS_DESC.some(s => d.includes(s));
+}
+
 function hasIntent(text: string): boolean {
   if (text.includes('?') || text.includes('¿')) return true;
   const t = text.toLowerCase();
@@ -81,7 +95,7 @@ async function scrapeReddit(keywords: string, location: string, limit: number): 
   const allLeads: string[] = [];
   const intentLeads: string[] = [];
 
-  for (const r of results) {
+  for (const r of results.filter(isUseful)) {
     if (!r.url.includes('reddit.com')) continue;
     const text = `${r.title} ${r.description || ''}`;
     const lead = JSON.stringify({
@@ -117,7 +131,7 @@ async function scrapePlatform(
 
   for (const q of queries) {
     const results = await braveSearch(q, 20);
-    for (const r of results) {
+    for (const r of results.filter(isUseful)) {
       if (!r.url.toLowerCase().includes(domainFilter)) continue;
       if (seen.has(r.url)) continue;
       seen.add(r.url);
@@ -152,7 +166,7 @@ async function scrapeForums(keywords: string, location: string, limit: number): 
 
   for (const q of queries) {
     const results = await braveSearch(q, 20);
-    for (const r of results) {
+    for (const r of results.filter(isUseful)) {
       if (!FORUM_DOMAINS.some(d => r.url.toLowerCase().includes(d))) continue;
       if (seen.has(r.url)) continue;
       seen.add(r.url);
@@ -190,7 +204,7 @@ async function scrapeWeb(keywords: string, location: string, limit: number): Pro
 
   for (const q of queries) {
     const results = await braveSearch(q, 20);
-    for (const r of results) {
+    for (const r of results.filter(isUseful)) {
       const urlLower = r.url.toLowerCase();
       if (SOCIAL_DOMAINS.some(d => urlLower.includes(d))) continue;
       if (seen.has(r.url)) continue;
