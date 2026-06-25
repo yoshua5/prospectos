@@ -103,7 +103,8 @@ export async function* scrapeLeads(
 
   for (let i = 0; i < batch.length; i++) {
     const r = batch[i];
-    const contact = contacts[i].status === 'fulfilled' ? contacts[i].value : { emails: [], phones: [] };
+    const settled = contacts[i];
+    const contact = settled.status === 'fulfilled' ? settled.value : { emails: [], phones: [] };
 
     const snippetPhones = extractPhones(r.description || '');
     const phone = contact.phones[0] || snippetPhones[0] || '';
