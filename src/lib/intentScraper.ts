@@ -1,10 +1,8 @@
-import * as cheerio from 'cheerio';
-
-const FETCH_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
-};
+interface BraveResult {
+  title: string;
+  url: string;
+  description?: string;
+}
 
 const INTENT_WORDS = [
   'busco', 'necesito', 'alguien', 'recomienda', 'recomiendan', 'quien me',
@@ -36,19 +34,34 @@ function hasIntent(text: string): boolean {
   return INTENT_WORDS.some(w => t.includes(w));
 }
 
-function decodeDdgUrl(href: string): string {
-  if (href.includes('uddg=')) {
-    const encoded = href.split('uddg=')[1].split('&')[0];
-    return decodeURIComponent(encoded);
+async function braveSearch(query: string, count = 20): Promise<BraveResult[]> {
+  const key = process.env.BRAVE_API_KEY;
+  if (!key) return [];
+  try {
+    const res = await fetch(
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
+      {
+        headers: {
+          'Accept': 'application/json',
+          'Accept-Encoding': 'gzip',
+          'X-Subscription-Token': key,
+        },
+        signal: AbortSignal.timeout(10000),
+      }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.web?.results || []) as BraveResult[];
+  } catch {
+    return [];
   }
-  return href.startsWith('http') ? href : '';
 }
 
-async function fetchHtml(url: string, timeout = 12000): Promise<string | null> {
+async function fetchRedditHtml(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
-      headers: FETCH_HEADERS,
-      signal: AbortSignal.timeout(timeout),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bot/1.0)' },
+      signal: AbortSignal.timeout(12000),
     });
     if (!res.ok) return null;
     return await res.text();
@@ -57,66 +70,38 @@ async function fetchHtml(url: string, timeout = 12000): Promise<string | null> {
   }
 }
 
-interface DdgResult { title: string; snippet: string; url: string }
-
-async function ddgSearch(query: string): Promise<DdgResult[]> {
-  const html = await fetchHtml(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`);
-  if (!html) return [];
-
-  const $ = cheerio.load(html);
-  const items: DdgResult[] = [];
-
-  $('.result').each((_, el) => {
-    const title = $(el).find('h2.result__title a, .result__a').first().text().trim();
-    const snippet = $(el).find('.result__snippet').first().text().trim();
-    const href = $(el).find('a.result__a, a[href*="uddg"]').first().attr('href') || '';
-    const url = decodeDdgUrl(href);
-    if (url.startsWith('http')) items.push({ title, snippet, url });
-  });
-
-  return items;
-}
-
 async function scrapeReddit(keywords: string, location: string, limit: number): Promise<string[]> {
-  const query = `${keywords} ${location}`.trim();
-  const html = await fetchHtml(
-    `https://old.reddit.com/search?q=${encodeURIComponent(query)}&restrict_sr=false&sort=new&t=all`
-  );
-  if (!html) return [];
+  // Use Brave to search Reddit specifically
+  const key = process.env.BRAVE_API_KEY;
+  if (!key) return [];
 
-  const $ = cheerio.load(html);
+  const query = `site:reddit.com ${keywords} ${location}`.trim();
+  const results = await braveSearch(query, limit * 2);
+
   const allLeads: string[] = [];
   const intentLeads: string[] = [];
 
-  $('.search-result-link, .search-result').each((_, el) => {
-    const titleEl = $(el).find('a.search-result-link, .search-title a, h3 a').first();
-    const title = titleEl.text().trim();
-    let href = titleEl.attr('href') || '';
-    if (href && !href.startsWith('http')) href = 'https://www.reddit.com' + href;
-
-    const desc = $(el).find('.search-result-body, .usertext-body').first().text().trim().slice(0, 150);
-    const meta = $(el).find('.search-result-meta, .tagline').first().text().trim().slice(0, 40);
-
-    if (!title && !href) return;
-
+  for (const r of results) {
+    if (!r.url.includes('reddit.com')) continue;
+    const text = `${r.title} ${r.description || ''}`;
     const lead = JSON.stringify({
-      name: title.slice(0, 80) || 'Reddit post',
-      website: href, email: '', phone: '',
-      address: (title + (desc ? ' — ' + desc : '')).slice(0, 220),
-      city: location, social: href,
+      name: r.title.slice(0, 80) || 'Reddit post',
+      website: r.url,
+      email: '', phone: '',
+      address: (r.description || r.title).slice(0, 220),
+      city: location, social: r.url,
       service: 'Reddit', keywords,
-      platform: 'Reddit', platform_meta: meta || 'reddit',
+      platform: 'Reddit', platform_meta: 'reddit.com',
     });
-
     allLeads.push(lead);
-    if (hasIntent(`${title} ${desc}`)) intentLeads.push(lead);
-  });
+    if (hasIntent(text)) intentLeads.push(lead);
+  }
 
-  const results = intentLeads.length ? intentLeads : allLeads;
-  return results.slice(0, limit);
+  const out = intentLeads.length ? intentLeads : allLeads;
+  return out.slice(0, limit);
 }
 
-async function scrapeDdgPlatform(
+async function scrapePlatform(
   keywords: string, location: string,
   platformName: string, domainFilter: string, hint: string,
   limit: number
@@ -131,35 +116,34 @@ async function scrapeDdgPlatform(
   const intentLeads: string[] = [];
 
   for (const q of queries) {
-    const items = await ddgSearch(q);
-    for (const { title, snippet, url } of items) {
-      if (!url.toLowerCase().includes(domainFilter)) continue;
-      if (['/login', '/signup'].some(s => url.toLowerCase().includes(s))) continue;
-      if (seen.has(url)) continue;
-      seen.add(url);
+    const results = await braveSearch(q, 20);
+    for (const r of results) {
+      if (!r.url.toLowerCase().includes(domainFilter)) continue;
+      if (seen.has(r.url)) continue;
+      seen.add(r.url);
 
+      const text = `${r.title} ${r.description || ''}`;
       const lead = JSON.stringify({
-        name: title.slice(0, 80) || platformName,
-        website: url, email: '', phone: '',
-        address: (snippet || title).slice(0, 220),
-        city: location, social: url,
+        name: r.title.slice(0, 80) || platformName,
+        website: r.url, email: '', phone: '',
+        address: (r.description || r.title).slice(0, 220),
+        city: location, social: r.url,
         service: platformName, keywords,
         platform: platformName, platform_meta: domainFilter,
       });
       allLeads.push(lead);
-      if (hasIntent(`${title} ${snippet}`)) intentLeads.push(lead);
+      if (hasIntent(text)) intentLeads.push(lead);
     }
-    await new Promise(r => setTimeout(r, 500));
   }
 
-  const results = intentLeads.length ? intentLeads : allLeads;
-  return results.slice(0, limit);
+  const out = intentLeads.length ? intentLeads : allLeads;
+  return out.slice(0, limit);
 }
 
-async function scrapeForosDdg(keywords: string, location: string, limit: number): Promise<string[]> {
+async function scrapeForums(keywords: string, location: string, limit: number): Promise<string[]> {
   const queries = [
     `${keywords} ${location} foro OR comunidad busco OR necesito OR recomendacion`,
-    `${keywords} ${location} foro OR ayuda OR opinion`,
+    `${keywords} ${location} foro ayuda OR opinion`,
   ];
 
   const seen = new Set<string>();
@@ -167,35 +151,37 @@ async function scrapeForosDdg(keywords: string, location: string, limit: number)
   const intentLeads: string[] = [];
 
   for (const q of queries) {
-    const items = await ddgSearch(q);
-    for (const { title, snippet, url } of items) {
-      if (!FORUM_DOMAINS.some(d => url.toLowerCase().includes(d))) continue;
-      if (seen.has(url)) continue;
-      seen.add(url);
+    const results = await braveSearch(q, 20);
+    for (const r of results) {
+      if (!FORUM_DOMAINS.some(d => r.url.toLowerCase().includes(d))) continue;
+      if (seen.has(r.url)) continue;
+      seen.add(r.url);
 
-      const domain = new URL(url).hostname;
+      const text = `${r.title} ${r.description || ''}`;
+      let domain = '';
+      try { domain = new URL(r.url).hostname; } catch { domain = r.url; }
+
       const lead = JSON.stringify({
-        name: title.slice(0, 80) || 'Foro post',
-        website: url, email: '', phone: '',
-        address: (snippet || title).slice(0, 220),
-        city: location, social: url,
+        name: r.title.slice(0, 80) || 'Foro post',
+        website: r.url, email: '', phone: '',
+        address: (r.description || r.title).slice(0, 220),
+        city: location, social: r.url,
         service: 'Foros', keywords,
         platform: 'Foros', platform_meta: domain,
       });
       allLeads.push(lead);
-      if (hasIntent(`${title} ${snippet}`)) intentLeads.push(lead);
+      if (hasIntent(text)) intentLeads.push(lead);
     }
-    await new Promise(r => setTimeout(r, 500));
   }
 
-  const results = intentLeads.length ? intentLeads : allLeads;
-  return results.slice(0, limit);
+  const out = intentLeads.length ? intentLeads : allLeads;
+  return out.slice(0, limit);
 }
 
-async function scrapeWebDdg(keywords: string, location: string, limit: number): Promise<string[]> {
+async function scrapeWeb(keywords: string, location: string, limit: number): Promise<string[]> {
   const queries = [
     `${keywords} ${location} busco OR necesito OR recomiendan OR donde contratar`,
-    `${keywords} ${location} quien recomienda OR alguien sabe OR me pueden ayudar`,
+    `${keywords} ${location} quien recomienda OR alguien sabe`,
   ];
 
   const seen = new Set<string>();
@@ -203,31 +189,32 @@ async function scrapeWebDdg(keywords: string, location: string, limit: number): 
   const intentLeads: string[] = [];
 
   for (const q of queries) {
-    const items = await ddgSearch(q);
-    for (const { title, snippet, url } of items) {
-      const urlLower = url.toLowerCase();
+    const results = await braveSearch(q, 20);
+    for (const r of results) {
+      const urlLower = r.url.toLowerCase();
       if (SOCIAL_DOMAINS.some(d => urlLower.includes(d))) continue;
-      if (['/login', '/signup'].some(s => urlLower.includes(s))) continue;
-      if (seen.has(url)) continue;
-      seen.add(url);
+      if (seen.has(r.url)) continue;
+      seen.add(r.url);
 
-      const domain = new URL(url).hostname;
+      let domain = '';
+      try { domain = new URL(r.url).hostname; } catch { domain = r.url; }
+
+      const text = `${r.title} ${r.description || ''}`;
       const lead = JSON.stringify({
-        name: title.slice(0, 80) || domain,
-        website: url, email: '', phone: '',
-        address: (snippet || title).slice(0, 220),
-        city: location, social: url,
+        name: r.title.slice(0, 80) || domain,
+        website: r.url, email: '', phone: '',
+        address: (r.description || r.title).slice(0, 220),
+        city: location, social: r.url,
         service: 'Web general', keywords,
         platform: 'Web general', platform_meta: domain,
       });
       allLeads.push(lead);
-      if (hasIntent(`${title} ${snippet}`)) intentLeads.push(lead);
+      if (hasIntent(text)) intentLeads.push(lead);
     }
-    await new Promise(r => setTimeout(r, 500));
   }
 
-  const results = intentLeads.length ? intentLeads : allLeads;
-  return results.slice(0, limit);
+  const out = intentLeads.length ? intentLeads : allLeads;
+  return out.slice(0, limit);
 }
 
 const PLATFORM_CONFIG: Record<string, { name: string; domain: string; hint: string }> = {
@@ -242,30 +229,32 @@ export async function* scrapeIntent(
   platforms: string[],
   limit: number
 ): AsyncGenerator<string> {
+  if (!process.env.BRAVE_API_KEY) {
+    yield JSON.stringify({ error: 'BRAVE_API_KEY no configurado. Agrega la variable de entorno en Vercel.' });
+    return;
+  }
+
   let emitted = 0;
 
   for (const platform of platforms) {
     if (emitted >= limit) break;
     const remaining = limit - emitted;
-
     let leads: string[] = [];
 
     if (platform === 'reddit') {
       leads = await scrapeReddit(keywords, location, remaining);
     } else if (platform === 'foros') {
-      leads = await scrapeForosDdg(keywords, location, remaining);
+      leads = await scrapeForums(keywords, location, remaining);
     } else if (platform === 'web') {
-      leads = await scrapeWebDdg(keywords, location, remaining);
+      leads = await scrapeWeb(keywords, location, remaining);
     } else if (PLATFORM_CONFIG[platform]) {
       const { name, domain, hint } = PLATFORM_CONFIG[platform];
-      leads = await scrapeDdgPlatform(keywords, location, name, domain, hint, remaining);
+      leads = await scrapePlatform(keywords, location, name, domain, hint, remaining);
     }
 
     for (const lead of leads) {
       yield lead;
       emitted++;
     }
-
-    await new Promise(r => setTimeout(r, 800));
   }
 }
