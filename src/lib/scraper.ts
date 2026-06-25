@@ -20,7 +20,13 @@ function isUseful(r: BraveResult): boolean {
 
 const SKIP_DOMAINS = [
   'tripadvisor', 'yelp', 'google', 'facebook', 'instagram', 'twitter',
-  'wikipedia', 'youtube', 'gob.mx', 'gobierno', 'linkedin', 'pinterest',
+  'wikipedia', 'youtube', 'gob.mx', 'gobierno', 'pinterest',
+  'tiktok', 'reddit', 'quora', 'amazon', 'mercadolibre',
+];
+
+const SKIP_DOMAINS_PERSONA = [
+  'tripadvisor', 'yelp', 'google', 'facebook', 'instagram', 'twitter',
+  'wikipedia', 'youtube', 'gob.mx', 'gobierno', 'pinterest',
   'tiktok', 'reddit', 'quora', 'amazon', 'mercadolibre',
 ];
 
@@ -75,6 +81,77 @@ async function fetchContactInfo(url: string): Promise<{ emails: string[]; phones
     };
   } catch {
     return { emails: [], phones: [] };
+  }
+}
+
+function extractPersonName(title: string, description: string): string {
+  // LinkedIn snippet: "Juan García - Event Planner | LinkedIn" or "Juan García · Organizador"
+  const linkedinTitle = title.match(/^([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+(?: [A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+){1,3})\s*[-·|]/);
+  if (linkedinTitle) return linkedinTitle[1];
+
+  // Description: "Juan García, organizador de eventos en CDMX"
+  const descName = description.match(/^([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+(?: [A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+){1,3})[,·\-]/);
+  if (descName) return descName[1];
+
+  return title.split(/[-|·]/)[0].trim().slice(0, 60);
+}
+
+export async function* scrapePersonas(
+  keywords: string,
+  location: string,
+  limit: number
+): AsyncGenerator<string> {
+  if (!process.env.BRAVE_API_KEY) {
+    yield JSON.stringify({ error: 'BRAVE_API_KEY no configurado. Agrega la variable de entorno en Vercel.' });
+    return;
+  }
+
+  const queries = [
+    `site:linkedin.com/in ${keywords} ${location}`,
+    `${keywords} ${location} organizador OR "event planner" OR "planner de eventos" contacto email`,
+    `${keywords} ${location} contratar persona independiente OR freelance OR profesional`,
+  ];
+
+  const seen = new Set<string>();
+  const batch: BraveResult[] = [];
+
+  for (const q of queries) {
+    if (batch.length >= limit * 2) break;
+    const results = await braveSearch(q, 20);
+    for (const r of results.filter(isUseful)) {
+      if (seen.has(r.url)) continue;
+      if (SKIP_DOMAINS_PERSONA.some(d => r.url.toLowerCase().includes(d))) continue;
+      seen.add(r.url);
+      batch.push(r);
+    }
+  }
+
+  const toFetch = batch.slice(0, limit);
+  const contacts = await Promise.allSettled(toFetch.map(r => fetchContactInfo(r.url)));
+
+  for (let i = 0; i < toFetch.length; i++) {
+    const r = toFetch[i];
+    const settled = contacts[i];
+    const contact = settled.status === 'fulfilled' ? settled.value : { emails: [], phones: [] };
+
+    const snippetPhones = extractPhones(r.description || '');
+    const phone = contact.phones[0] || snippetPhones[0] || '';
+    const email = contact.emails[0] || '';
+    const name = extractPersonName(r.title, r.description || '');
+
+    const isLinkedIn = r.url.includes('linkedin.com');
+
+    yield JSON.stringify({
+      name,
+      website: r.url,
+      email: isLinkedIn ? '' : email,
+      phone: isLinkedIn ? '' : phone,
+      address: (r.description || '').slice(0, 220),
+      city: location,
+      social: isLinkedIn ? r.url : '',
+      service: 'Persona',
+      keywords,
+    });
   }
 }
 

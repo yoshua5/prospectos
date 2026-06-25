@@ -28,6 +28,7 @@ const PLATFORM_CONFIG: Record<string, { emoji: string; color: string; bg: string
 
 export default function BusquedaPage() {
   const [tab, setTab] = useState<'empresa' | 'intencion'>('empresa');
+  const [searchMode, setSearchMode] = useState<'empresa' | 'persona'>('empresa');
   // --- Empresa state ---
   const [form, setForm] = useState({ service: '', keywords: '', location: '', country: '', limit: '20' });
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -73,6 +74,7 @@ export default function BusquedaPage() {
           keywords: `${form.keywords} ${form.country}`.trim(),
           location: form.location,
           limit: parseInt(form.limit),
+          mode: searchMode,
         }),
         signal: abortRef.current.signal,
       });
@@ -301,6 +303,30 @@ export default function BusquedaPage() {
               </div>
             </div>
 
+            {/* Empresa / Persona toggle */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button
+                onClick={() => setSearchMode('empresa')}
+                style={{
+                  padding: '6px 16px', borderRadius: 8, border: '2px solid',
+                  borderColor: searchMode === 'empresa' ? '#f97316' : '#e5e7eb',
+                  background: searchMode === 'empresa' ? '#fff7ed' : '#fff',
+                  color: searchMode === 'empresa' ? '#c2410c' : '#6b7280',
+                  fontWeight: 600, cursor: 'pointer', fontSize: 14,
+                }}
+              >🏢 Empresas</button>
+              <button
+                onClick={() => setSearchMode('persona')}
+                style={{
+                  padding: '6px 16px', borderRadius: 8, border: '2px solid',
+                  borderColor: searchMode === 'persona' ? '#f97316' : '#e5e7eb',
+                  background: searchMode === 'persona' ? '#fff7ed' : '#fff',
+                  color: searchMode === 'persona' ? '#c2410c' : '#6b7280',
+                  fontWeight: 600, cursor: 'pointer', fontSize: 14,
+                }}
+              >👤 Personas</button>
+            </div>
+
             <div style={{ display: 'flex', gap: 12 }}>
               <button className="btn btn-primary" onClick={handleSearch} disabled={loading}>
                 {loading ? '⏳ Buscando...' : '🔍 Buscar Leads'}
@@ -331,6 +357,9 @@ export default function BusquedaPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
                 {leads.map((lead, i) => (
                   <div key={i} className="lead-card">
+                    {searchMode === 'persona' && (
+                      <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, background: '#ede9fe', color: '#7c3aed', borderRadius: 4, padding: '2px 7px', marginBottom: 6 }}>👤 Persona</span>
+                    )}
                     <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8, color: '#0f172a' }}>{lead.name || 'Sin nombre'}</div>
                     {lead.website && (
                       <div style={{ fontSize: 13, marginBottom: 4 }}>
@@ -341,6 +370,11 @@ export default function BusquedaPage() {
                     )}
                     {lead.email && <div style={{ fontSize: 13, marginBottom: 4 }}>✉️ {lead.email}</div>}
                     {lead.phone && <div style={{ fontSize: 13, marginBottom: 4 }}>📞 {lead.phone}</div>}
+                    {lead.social && lead.social.includes('linkedin') && (
+                      <div style={{ fontSize: 13, marginBottom: 4 }}>
+                        💼 <a href={lead.social} target="_blank" rel="noopener noreferrer" style={{ color: '#0a66c2', textDecoration: 'none' }}>Ver perfil LinkedIn</a>
+                      </div>
+                    )}
                     {lead.city && <div style={{ fontSize: 13, color: '#64748b' }}>📍 {lead.city}</div>}
                   </div>
                 ))}

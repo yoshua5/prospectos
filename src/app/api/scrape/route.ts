@@ -1,17 +1,20 @@
 import { NextRequest } from 'next/server';
-import { scrapeLeads } from '@/lib/scraper';
+import { scrapeLeads, scrapePersonas } from '@/lib/scraper';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  const { service, keywords, location, limit = 20 } = await req.json();
+  const { service, keywords, location, limit = 20, mode = 'empresa' } = await req.json();
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        for await (const line of scrapeLeads(service, keywords, location, limit)) {
+        const gen = mode === 'persona'
+          ? scrapePersonas(keywords, location, limit)
+          : scrapeLeads(service, keywords, location, limit);
+        for await (const line of gen) {
           controller.enqueue(encoder.encode(`data: ${line}\n\n`));
         }
       } catch (err) {
