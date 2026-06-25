@@ -24,12 +24,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { name, website, email, phone, address, city, social, service, keywords, status } = await req.json();
+  const { name, website, email, phone, owner, phone_type, address, city, social, service, keywords, status } = await req.json();
 
   const { lastInsertRowid } = await execute(
-    `INSERT INTO leads (name, website, email, phone, address, city, social, service, keywords, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name||'', website||'', email||'', phone||'', address||'', city||'', social||'', service||'', keywords||'', status||'nuevo']
+    `INSERT INTO leads (name, website, email, phone, owner, phone_type, address, city, social, service, keywords, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name||'', website||'', email||'', phone||'', owner||'', phone_type||'', address||'', city||'', social||'', service||'', keywords||'', status||'nuevo']
   );
 
   const lead = await query('SELECT * FROM leads WHERE id = ?', [lastInsertRowid]);

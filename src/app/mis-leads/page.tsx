@@ -7,6 +7,8 @@ type Lead = {
   website: string;
   email: string;
   phone: string;
+  owner: string;
+  phone_type: string;
   address: string;
   city: string;
   social: string;
@@ -246,6 +248,7 @@ export default function MisLeadsPage() {
                   <input type="checkbox" checked={selected.size === leads.length && leads.length > 0} onChange={toggleAll} />
                 </th>
                 <th>Empresa</th>
+                <th>Contacto</th>
                 <th>Email</th>
                 <th>Teléfono</th>
                 <th>Ciudad</th>
@@ -268,8 +271,18 @@ export default function MisLeadsPage() {
                       </a>
                     )}
                   </td>
+                  <td style={{ color: lead.owner ? '#7c3aed' : '#cbd5e1', fontSize: 13 }}>{lead.owner || '—'}</td>
                   <td style={{ color: lead.email ? '#0f172a' : '#cbd5e1' }}>{lead.email || '—'}</td>
-                  <td style={{ color: lead.phone ? '#0f172a' : '#cbd5e1' }}>{lead.phone || '—'}</td>
+                  <td>
+                    <span style={{ color: lead.phone ? '#0f172a' : '#cbd5e1' }}>{lead.phone || '—'}</span>
+                    {lead.phone_type && (
+                      <span style={{
+                        marginLeft: 5, fontSize: 10, fontWeight: 700, padding: '1px 4px', borderRadius: 3,
+                        background: lead.phone_type === 'MOBILE' ? '#dcfce7' : '#dbeafe',
+                        color: lead.phone_type === 'MOBILE' ? '#166534' : '#1e40af',
+                      }}>{lead.phone_type}</span>
+                    )}
+                  </td>
                   <td>{lead.city || '—'}</td>
                   <td>
                     <select

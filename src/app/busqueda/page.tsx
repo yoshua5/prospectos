@@ -6,6 +6,8 @@ type Lead = {
   website: string;
   email: string;
   phone: string;
+  owner?: string;
+  phone_type?: string;
   address: string;
   city: string;
   social: string;
@@ -368,8 +370,20 @@ export default function BusquedaPage() {
                         </a>
                       </div>
                     )}
+                    {lead.owner && <div style={{ fontSize: 13, marginBottom: 4, color: '#7c3aed' }}>👤 {lead.owner}</div>}
                     {lead.email && <div style={{ fontSize: 13, marginBottom: 4 }}>✉️ {lead.email}</div>}
-                    {lead.phone && <div style={{ fontSize: 13, marginBottom: 4 }}>📞 {lead.phone}</div>}
+                    {lead.phone && (
+                      <div style={{ fontSize: 13, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        📞 {lead.phone}
+                        {lead.phone_type && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+                            background: lead.phone_type === 'MOBILE' ? '#dcfce7' : '#dbeafe',
+                            color: lead.phone_type === 'MOBILE' ? '#166534' : '#1e40af',
+                          }}>{lead.phone_type}</span>
+                        )}
+                      </div>
+                    )}
                     {lead.social && lead.social.includes('linkedin') && (
                       <div style={{ fontSize: 13, marginBottom: 4 }}>
                         💼 <a href={lead.social} target="_blank" rel="noopener noreferrer" style={{ color: '#0a66c2', textDecoration: 'none' }}>Ver perfil LinkedIn</a>

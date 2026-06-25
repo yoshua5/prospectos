@@ -64,23 +64,77 @@ function extractEmails(text: string): string[] {
   return [...new Set(raw)].filter(e => !e.includes('example') && !e.includes('sentry') && !e.includes('wix') && !e.includes('@2x'));
 }
 
-async function fetchContactInfo(url: string): Promise<{ emails: string[]; phones: string[] }> {
+function extractOwnerName(text: string): string {
+  const titleWords = ['director', 'propietario', 'dueño', 'dueno', 'gerente', 'ceo', 'fundador', 'owner', 'manager', 'presidente', 'responsable'];
+  const nameRe = /([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+(?:\s[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+){1,3})/g;
+  const lower = text.toLowerCase();
+  for (const title of titleWords) {
+    const idx = lower.indexOf(title);
+    if (idx === -1) continue;
+    const surrounding = text.slice(Math.max(0, idx - 80), idx + 120);
+    const m = surrounding.match(nameRe);
+    if (m) return m[0];
+  }
+  return '';
+}
+
+function classifyPhone(phone: string): 'MOBILE' | 'LANDLINE' | '' {
+  const d = phone.replace(/\D/g, '');
+  if (d.length < 7) return '';
+  return d.length === 10 ? 'MOBILE' : 'LANDLINE';
+}
+
+function pickBestEmail(emails: string[], owner: string): string {
+  if (!emails.length) return '';
+  const firstName = owner.split(' ')[0].toLowerCase();
+  if (firstName.length > 2) {
+    const ownerEmail = emails.find(e => e.startsWith(firstName));
+    if (ownerEmail) return ownerEmail;
+  }
+  const personal = emails.find(e => !/^(info|contacto|hola|admin|ventas|soporte|hello|contact|support|mail|noreply|no-reply)@/.test(e));
+  return personal || emails[0];
+}
+
+async function fetchPageText(url: string): Promise<string> {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!res.ok) return '';
+  const html = await res.text();
+  return html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+             .replace(/<[^>]+>/g, ' ');
+}
+
+async function fetchContactInfo(url: string): Promise<{ emails: string[]; phones: string[]; owner: string }> {
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return { emails: [], phones: [] };
-    const html = await res.text();
-    const text = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
-                     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
-                     .replace(/<[^>]+>/g, ' ');
+    let text = await fetchPageText(url);
+    if (!text) return { emails: [], phones: [], owner: '' };
+
+    let owner = extractOwnerName(text);
+
+    // If no owner on homepage, try /contacto or /about
+    if (!owner) {
+      const base = url.replace(/\/+$/, '');
+      for (const sub of ['/contacto', '/contact', '/nosotros', '/about', '/equipo']) {
+        try {
+          const subText = await fetchPageText(base + sub);
+          if (subText) {
+            owner = extractOwnerName(subText);
+            if (owner) { text += ' ' + subText; break; }
+          }
+        } catch { /* skip */ }
+      }
+    }
+
     return {
-      emails: extractEmails(text).slice(0, 3),
+      emails: extractEmails(text).slice(0, 5),
       phones: extractPhones(text).slice(0, 3),
+      owner,
     };
   } catch {
-    return { emails: [], phones: [] };
+    return { emails: [], phones: [], owner: '' };
   }
 }
 
@@ -132,7 +186,7 @@ export async function* scrapePersonas(
   for (let i = 0; i < toFetch.length; i++) {
     const r = toFetch[i];
     const settled = contacts[i];
-    const contact = settled.status === 'fulfilled' ? settled.value : { emails: [], phones: [] };
+    const contact = settled.status === 'fulfilled' ? settled.value : { emails: [], phones: [], owner: '' };
 
     const snippetPhones = extractPhones(r.description || '');
     const phone = contact.phones[0] || snippetPhones[0] || '';
@@ -181,17 +235,19 @@ export async function* scrapeLeads(
   for (let i = 0; i < batch.length; i++) {
     const r = batch[i];
     const settled = contacts[i];
-    const contact = settled.status === 'fulfilled' ? settled.value : { emails: [], phones: [] };
+    const contact = settled.status === 'fulfilled' ? settled.value : { emails: [], phones: [], owner: '' };
 
     const snippetPhones = extractPhones(r.description || '');
     const phone = contact.phones[0] || snippetPhones[0] || '';
-    const email = contact.emails[0] || '';
+    const email = pickBestEmail(contact.emails, contact.owner);
 
     yield JSON.stringify({
       name: r.title.slice(0, 80),
       website: r.url,
+      owner: contact.owner,
       email,
       phone,
+      phone_type: classifyPhone(phone),
       address: (r.description || '').slice(0, 220),
       city: location,
       social: '',

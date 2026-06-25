@@ -18,6 +18,8 @@ const initSQL = `
     social TEXT,
     service TEXT,
     keywords TEXT,
+    owner TEXT DEFAULT '',
+    phone_type TEXT DEFAULT '',
     status TEXT DEFAULT 'nuevo',
     created_at TEXT DEFAULT (datetime('now'))
   );
@@ -80,6 +82,18 @@ async function ensureInit() {
   for (const [col, def] of Object.entries(newCols)) {
     if (!existing.includes(col)) {
       await client.execute(`ALTER TABLE templates ADD COLUMN ${col} ${def}`);
+    }
+  }
+  // Migrate leads columns
+  const leadCols = await client.execute("PRAGMA table_info(leads)");
+  const existingLeadCols = leadCols.rows.map(r => r[1] as string);
+  const newLeadCols: Record<string, string> = {
+    owner: "TEXT DEFAULT ''",
+    phone_type: "TEXT DEFAULT ''",
+  };
+  for (const [col, def] of Object.entries(newLeadCols)) {
+    if (!existingLeadCols.includes(col)) {
+      await client.execute(`ALTER TABLE leads ADD COLUMN ${col} ${def}`);
     }
   }
   initialized = true;
