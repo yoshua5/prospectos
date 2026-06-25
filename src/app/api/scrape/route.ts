@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { scrapeLeads } from '@/lib/scraper';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const { service, keywords, location, limit = 20 } = await req.json();
