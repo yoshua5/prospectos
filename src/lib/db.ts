@@ -58,7 +58,8 @@ const initSQL = `
     user TEXT,
     pass TEXT,
     from_name TEXT,
-    from_email TEXT
+    from_email TEXT,
+    lp_api_key TEXT DEFAULT ''
   );
 `;
 
@@ -83,6 +84,12 @@ async function ensureInit() {
     if (!existing.includes(col)) {
       await client.execute(`ALTER TABLE templates ADD COLUMN ${col} ${def}`);
     }
+  }
+  // Migrate smtp_config columns
+  const smtpCols = await client.execute("PRAGMA table_info(smtp_config)");
+  const existingSmtpCols = smtpCols.rows.map(r => r[1] as string);
+  if (!existingSmtpCols.includes('lp_api_key')) {
+    await client.execute(`ALTER TABLE smtp_config ADD COLUMN lp_api_key TEXT DEFAULT ''`);
   }
   // Migrate leads columns
   const leadCols = await client.execute("PRAGMA table_info(leads)");

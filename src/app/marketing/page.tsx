@@ -13,7 +13,7 @@ type Campaign = {
   id: number; name: string; template_id: number; leads_json: string;
   status: string; sent_count: number; bounce_count: number; created_at: string; sent_at: string;
 };
-type SmtpConfig = { host?: string; port?: number; user?: string; pass?: string; from_name?: string; from_email?: string };
+type SmtpConfig = { host?: string; port?: number; user?: string; pass?: string; from_name?: string; from_email?: string; lp_api_key?: string };
 
 const VARS = ['{{nombre_empresa}}', '{{ciudad}}', '{{sitio_web}}', '{{email}}'];
 
@@ -545,6 +545,45 @@ export default function MarketingPage() {
                 </ol>
               </div>
             )}
+          </div>
+
+          {/* LocalProspects API Key */}
+          <div className="card" style={{ marginTop: 20 }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>🔑 LocalProspects API Key</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#64748b' }}>
+              Obtén leads enriquecidos con nombre del dueño, email directo, teléfono y tipo. Regístrate en <strong>localprospects.ai</strong>
+            </p>
+            <div>
+              <label className="label">API Key (empieza con lp_)</label>
+              <input
+                className="input"
+                type="password"
+                placeholder="lp_xxxxxxxxxxxx"
+                value={smtp.lp_api_key || ''}
+                onChange={e => setSmtp({ ...smtp, lp_api_key: e.target.value })}
+              />
+            </div>
+            {smtp.lp_api_key && !smtp.lp_api_key.endsWith('***') && (
+              <div style={{ marginTop: 8, fontSize: 12, color: smtp.lp_api_key.startsWith('lp_') ? '#059669' : '#dc2626' }}>
+                {smtp.lp_api_key.startsWith('lp_') ? '✓ Formato válido' : '⚠ La clave debe empezar con lp_'}
+              </div>
+            )}
+            {smtp.lp_api_key?.endsWith('***') && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#059669' }}>✓ API Key configurada</div>
+            )}
+            <div style={{ marginTop: 12 }}>
+              <button className="btn btn-primary" onClick={saveSmtp} disabled={smtpSaving}>
+                {smtpSaving ? 'Guardando...' : '💾 Guardar API Key'}
+              </button>
+            </div>
+            <div style={{ marginTop: 14, padding: 12, background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 13 }}>
+              <strong>Cuando configures la API key:</strong>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#166534', lineHeight: 1.8 }}>
+                <li>Búsqueda "Por Empresa" usará LocalProspects automáticamente</li>
+                <li>Resultados incluyen dueño, email personal, teléfono verificado</li>
+                <li>Sin API key → usa búsqueda básica con Brave</li>
+              </ul>
+            </div>
           </div>
         </div>
       )}
